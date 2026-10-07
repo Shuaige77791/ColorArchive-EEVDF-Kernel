@@ -1,0 +1,79 @@
+# === fair.c EEVDF port — key changes ===
+# (Unified-diff style excerpts; full file is 12K+ lines)
+
+--- kernel/sched/fair.c (CFS original)
++++ kernel/sched/fair.c (EEVDF port)
+
+# EEVDF entity fields (struct sched_entity):
++	u64				deadline;
++	s64				vlag;
++	int				slice;
+
+# pick_eevdf — earliest eligible virtual deadline:
++static struct sched_entity *pick_eevdf(struct cfs_rq *cfs_rq)
++{
++	struct rb_node *node = cfs_rq->tasks_timeline.rb_root.rb_node;
++	struct sched_entity *se = __pick_first_entity(cfs_rq);
++	struct sched_entity *curr = cfs_rq->curr;
++
++	if (curr && curr->on_rq) {
++		if (se && entity_before(curr, se))
++			return curr;
++		if (entity_eligible(cfs_rq, curr))
++			return curr;
++	}
++
++	/* RB-tree traversal for earliest deadline */
++	while (node) {
++		struct sched_entity *right = rb_entry(node, struct sched_entity, run_node);
++		if (!entity_eligible(cfs_rq, right)) {
++			node = node->rb_left;
++			continue;
++		}
++		se = right;
++		node = node->rb_right;
++	}
++	return se;
++}
+
+# entity_eligible:
++static inline int entity_eligible(struct cfs_rq *cfs_rq, struct sched_entity *se)
++{
++	return (s64)(se->vruntime - cfs_rq->min_vruntime) <= 0;
++}
+
+# place_entity — EEVDF placement:
++static void place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
++{
++	...
++	se->vruntime = max_vruntime(se->vruntime, cfs_rq->min_vruntime);
++	if (flags & ENQUEUE_WAKEUP) {
++		s64 lag = se->vlag;
++		...
++	}
++	se->slice = sysctl_sched_base_slice;
++	se->deadline = se->vruntime + calc_delta_fair(se->slice, se);
++}
+
+# update_deadline — EEVDF tick logic (replaces check_preempt_tick):
++static void update_deadline(struct cfs_rq *cfs_rq, struct sched_entity *se)
++{
++	if ((s64)(se->vruntime - se->deadline) < 0)
++		return;
++	se->slice = eevdf_slice_of(cfs_rq, se);
++	se->deadline = se->vruntime + calc_delta_fair(se->slice, se);
++	if (cfs_rq->nr_running > 1) {
++		resched_curr(rq_of(cfs_rq));
++		clear_buddies(cfs_rq, se);
++	}
++}
+
+# Unfair scheduling layer (DISABLED in this variant):
+# sysctl_sched_eevdf_unfair = 0
+# sysctl_sched_eevdf_slice_weight = 0
+# sysctl_sched_eevdf_vruntime_weight = 0
+# (These are kept in the source for the #44 unfair variant but off here)
+
+# NOTE: CFS check_preempt_tick() is DELETED (replaced by update_deadline).
+#   -> OPLUS's android_rvh_check_preempt_tick hook has NO call site in EEVDF.
+#   -> The #35+ kernels restore this hook; #33 (this release) does NOT.

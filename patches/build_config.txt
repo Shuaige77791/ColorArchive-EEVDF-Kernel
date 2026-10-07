@@ -1,0 +1,18 @@
+# === Build config for the Pure EEVDF kernel ===
+
+CONFIG_SCHED_EEVDF (implicit — it's a direct code port, not a config)
+CONFIG_SCHED_DEBUG=y          # debugfs nodes for tuning
+CONFIG_ANDROID_VENDOR_HOOKS=y # for sched_assist hooks (but not used in #33)
+
+# Fair.c key defaults (hardcoded, not CONFIG):
+sysctl_sched_base_slice       = 10000000ULL  (10ms, default)
+sysctl_sched_eevdf_unfair     = 0            (unfair OFF)
+sysctl_sched_eevdf_slice_weight     = 0
+sysctl_sched_eevdf_vruntime_weight  = 0
+sysctl_sched_eevdf_ui_boost         = 0
+
+# No:
+# - uclamp injection (OPLUS background cap) — REMOVED
+# - watermark clamp — REMOVED  
+# - swap clamp — REMOVED
+# - DSH_RAM_HOOKS — REMOVED
